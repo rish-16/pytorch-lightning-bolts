@@ -21,5 +21,5 @@ try:
 
     from pl_bolts.datamodules.kitti_dataset import KittiDataset
     from pl_bolts.datamodules.kitti_datamodule import KittiDataModule
-except ImportError:
+except ModuleNotFoundError:
     pass
