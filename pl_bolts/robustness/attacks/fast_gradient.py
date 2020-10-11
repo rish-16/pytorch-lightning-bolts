@@ -13,9 +13,54 @@ class FastGradientMethod:
     def __init__(self, classifier, epsilon=0.1):
         self.classifier = classifier
         self.epsilon = epsilon
+        self.reg = 1e-12
         
-    def generate_adversarial(self, x_test):
-        pass
+    def fgsm(self, input_img, label, iters, targeted=False, alpha=0.02, clamp=((-2.118, -2.036, -1.804), (2.249, 2.429, 2.64)), use_cuda=False):
+        device = torch.device('cuda' if use_cuda else 'cpu')
+        self.classifier.to(device)
+        self.classifier.eval()
+        
+        crit = nn.CrossEntropyLoss().to(device)
+        input_img = input_img.to(device)
+        img_var = input_img.clone().requires_grad(True).to(device)
+        label_var = torch.LongTensor([label]).to(device)
+        
+        for _ in iters:
+            img_var.grad = None
+            pred = self.classifier(img_var)
+            
+            loss = crit(pred, label_var) + self.reg * F.mse_loss(img_var, input_img)
+            loss.backward()
+            
+            noise = alpha * torch.sign(img_var.grad.data)
+            
+            if targeted:
+                img_var.data = img_var.data - noise
+            else:
+                img_var.data = img_var.data + noise
+                
+            if clamp[0] is not None and clamp[1] is not None:
+                assert len(clamp[0]) == len(clamp[1])
+                for ch in range(len(clamp[0])):
+                    img_var.data[:, ch, :, :].clamp_(clamp[0][ch], clamp[1][ch])
+                    
+            return img_var.cpu().detach()
+        
+    def generate_adversarial(self, iters=1, targeted=False):
+        x_test = self.classifier.test_dataloader()
+        x_adv = []
+        for i in range(len(x_test)):
+            cur_img = x_test[i]
+            cur_label = y_test[i]
+            res = self.fgsm(cur_img, 
+                            cur_label, 
+                            iters=iters, 
+                            argeted=targeted, 
+                            alpha=self.classifier.lr, 
+                            use_cuda=False)
+            x_adv.append(res)
+            
+        return x_adv
         
 class LitNet(LightningModule):
     def __init__(self):
@@ -70,3 +115,4 @@ class LitNet(LightningModule):
 net = LitNet()
 trainer = Trainer()
 trainer.fit(net)
+
